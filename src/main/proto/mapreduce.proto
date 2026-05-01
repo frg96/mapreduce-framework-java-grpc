@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.frg96.mapreduce";
+option java_outer_classname = "MapReduceProto";
+
+package mapreduce;
+
+service MRFramework {
+  rpc mapper(MapperInput) returns (MapperOutput) {}
+  rpc reducer(ReducerInput) returns (ReducerOutput) {}
+}
+
+message ShardSplit {
+  string file_name = 1;
+  int64 start_pos = 2;
+  int64 end_pos = 3;
+}
+
+message File {
+  string file_name = 1;
+}
+
+message MapperInput {
+  string app_id = 1;
+  repeated ShardSplit input_splits = 2;
+  int32 num_partitions = 3;
+}
+
+message MapperOutput {
+  repeated File files = 1;
+}
+
+message ReducerInput {
+  string app_id = 1;
+  repeated File files = 2;
+  int32 partition_id = 3;
+  string output_dir = 4;
+}
+
+message ReducerOutput {
+  File file = 1;
+}
