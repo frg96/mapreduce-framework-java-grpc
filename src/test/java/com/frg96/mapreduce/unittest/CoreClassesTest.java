@@ -3,11 +3,13 @@ package com.frg96.mapreduce.unittest;
 import com.frg96.mapreduce.core.*;
 import org.junit.jupiter.api.*;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class UnitTests {
+public class CoreClassesTest {
 
     @Test
     public void testPrintUserDir() {
@@ -31,6 +33,10 @@ public class UnitTests {
     public void testIntermediateDirectoryHandler() {
         try {
             assertTrue(IntermediateDirectoryHandler.prepareIntermediateDirectory("output"));
+            assertTrue(Files.exists(Path.of("output")));
+            assertTrue(Files.exists(Path.of("output", "intermediate")));
+            assertTrue(Files.exists(Path.of("output", "intermediate", "mapper")));
+            assertTrue(Files.exists(Path.of("output", "intermediate", "reducer")));
         } catch (Exception e) {
             e.printStackTrace();
             fail();
