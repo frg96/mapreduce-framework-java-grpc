@@ -39,7 +39,7 @@ public class TaskRegistry {
 
     /**
      * Creates a new reducer for the given app_id using the registered TaskFactory.
-     * @param appId the app_id
+     * @param appId the application ID string
      * @return a new Reducer object
      */
     public static Reducer createReducer(String appId) {
