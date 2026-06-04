@@ -25,6 +25,7 @@ message MapperInput {
   string app_id = 1;
   repeated ShardSplit input_splits = 2;
   int32 num_partitions = 3;
+  string output_dir = 4;
 }
 
 message MapperOutput {
