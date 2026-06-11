@@ -1,6 +1,7 @@
 package com.frg96.mapreduce.api;
 
 import com.frg96.mapreduce.core.*;
+import com.frg96.mapreduce.master.Master;
 
 import java.util.List;
 
@@ -36,11 +37,8 @@ public final class MapReduceJob {
         // Shard the input files
          List<FileShard> fileShards = FileSharder.shardFiles(spec);
 
-        // Start master
-        // TODO
-//        Master master = new Master(spec, fileShards);
-//        return master.run();
-
-        return true;
+        // Run master
+        Master master = new Master(spec, fileShards);
+        return master.run();
     }
 }
