@@ -9,6 +9,7 @@ import io.grpc.StatusRuntimeException;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -48,7 +49,7 @@ public class Master {
 
             runMapPhase();
 
-//            runReducePhase();
+            runReducePhase();
 
             return true;
         } finally {
@@ -174,6 +175,107 @@ public class Master {
         }
 
         return builder.build();
+    }
+
+    private void runReducePhase() {
+        CountDownLatch latch = new CountDownLatch(partitionInfos.size());
+
+        for(PartitionInfo partitionInfo: partitionInfos) {
+            readyPartitions.offer(partitionInfo.getId());
+        }
+
+        List<WorkerInfo> activeWorkers = workerInfos.stream()
+                .filter(workerInfo -> workerInfo.getWorkerStatus() != WorkerStatus.DEAD)
+                .filter(workerInfo ->  workerInfo.getWorkerStatus() != WorkerStatus.SLOW)
+                .toList();
+
+        try(ExecutorService executor = Executors.newFixedThreadPool(activeWorkers.size())) {
+            for(WorkerInfo workerInfo: activeWorkers) {
+                executor.submit(() -> reducerTask(workerInfo, latch));
+            }
+
+            await(latch);
+
+            for(int i = 0; i < activeWorkers.size(); i++) {
+                readyPartitions.offer(POISON_PILL);
+            }
+        } // executor will auto close
+    }
+
+    private void reducerTask(WorkerInfo workerInfo, CountDownLatch latch) {
+        while(!Thread.currentThread().isInterrupted()) {
+            int partitionId;
+
+            try {
+                partitionId = readyPartitions.take();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+
+            if(partitionId == POISON_PILL) {
+                return;
+            }
+
+            PartitionInfo partition = partitionInfos.get(partitionId);
+            partition.setStatus(TaskStatus.IN_PROGRESS);
+            workerInfo.setWorkerStatus(WorkerStatus.BUSY);
+
+            try {
+                ReducerInput input = buildReducerInput(partition);
+
+                // Blocking RPC Call
+                ReducerOutput output = workerInfo.getClient().callReducer(input);
+
+                // copying file to final output dir
+                copyReducerOutput(output.getFile().getFileName());
+
+                partition.setStatus(TaskStatus.COMPLETED);
+                workerInfo.setWorkerStatus(WorkerStatus.IDLE);
+                latch.countDown();
+
+            } catch (StatusRuntimeException e) {
+                partition.setStatus(TaskStatus.READY);
+                readyPartitions.offer(partitionId);
+
+                if(handleWorkerFailure(workerInfo, e)) {
+                    return;
+                }
+            }
+        }
+    }
+
+    private ReducerInput buildReducerInput(PartitionInfo partitionInfo) {
+        ReducerInput.Builder builder = ReducerInput.newBuilder()
+                .setAppId(spec.appId())
+                .setPartitionId(partitionInfo.getId())
+                .setOutputDir(spec.outputDir());
+
+        for(String fileName: partitionInfo.getFileNamesSnapshot()) {
+            builder.addFiles(
+                    File.newBuilder()
+                            .setFileName(fileName)
+                            .build()
+            );
+        }
+
+        return builder.build();
+    }
+
+    private void copyReducerOutput(String reducerOutputFilePath) {
+        try {
+            Path source = Path.of(reducerOutputFilePath);
+            Path destination = Path.of(
+                    spec.outputDir(),
+                    "final",
+                    source.getFileName().toString()
+            );
+
+            Files.copy(source, destination, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to copy reducer output", e);
+        }
+
     }
 
     private boolean handleWorkerFailure(WorkerInfo worker, StatusRuntimeException e) {
