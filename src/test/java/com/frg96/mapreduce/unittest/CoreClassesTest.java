@@ -79,7 +79,7 @@ public class CoreClassesTest {
             output_dir=%s
             num_output_files=1
             map_kilobytes=1
-            app_id=test
+            app_id=frg96-coretest
             """.formatted(input, output));
 
         assertThrows(NumberFormatException.class, () -> SpecParser.parse(config.toString()));
@@ -96,7 +96,7 @@ public class CoreClassesTest {
                 "output",
                 1,
                 1,
-                "test"
+                "frg96-coretest"
         );
 
         MapReduceSpec spec = SpecParser.parse(fixture.configFile().toString());
@@ -174,7 +174,7 @@ public class CoreClassesTest {
                 "output",
                 1,
                 1,
-                "test"
+                "frg96-coretest"
         );
 
         MapReduceSpec spec = SpecParser.parse(fixture.configFile().toString());
