@@ -39,7 +39,10 @@ class MRFrameworkClient {
 
     void shutdown(){
         try {
-            this.channel.shutdown().awaitTermination(5, TimeUnit.SECONDS);
+            channel.shutdown();
+            if(!channel.awaitTermination(5, TimeUnit.SECONDS)) {
+                channel.shutdownNow();
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             logger.severe("MRFrameworkClient shutdown interrupted");
