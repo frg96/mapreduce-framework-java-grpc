@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -185,7 +186,8 @@ public class MRFrameworkService extends MRFrameworkGrpc.MRFrameworkImplBase {
 
 
         }  catch(Exception e) {
-            logger.severe("Failed to execute reducer() call");
+            logger.log(Level.SEVERE, "Failed to execute reducer() call", e);
+
             responseObserver.onError(
                     Status.INTERNAL
                             .withDescription(e.getMessage())
