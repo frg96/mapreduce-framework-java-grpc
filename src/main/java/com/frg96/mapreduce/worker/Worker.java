@@ -20,6 +20,8 @@ public class Worker {
 
     private final MRFrameworkService service;
 
+    private ExecutorService executor;
+
     private Server server;
 
     public Worker(String address) {
@@ -31,7 +33,7 @@ public class Worker {
         try {
             int port = parsePort(address);
 
-            final ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+            this.executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
 
             this.server = Grpc.newServerBuilderForPort(port, InsecureServerCredentials.create())
                     .addService(this.service)
@@ -41,33 +43,25 @@ public class Worker {
 
             logger.info("Server started, listening on " + port);
 
-            Runtime.getRuntime().addShutdownHook(new Thread() {
-                @Override
-                public void run() {
-                    // Use stderr here since the logger may have been reset by its JVM shutdown hook.
-                    System.err.println("*** shutting down gRPC server since JVM is shutting down");
-                    try {
-                        Worker.this.stop();
-                    } catch (InterruptedException e) {
-                        if (server != null) {
-                            server.shutdownNow();
-                        }
-                        e.printStackTrace(System.err);
-                    } finally {
-                        executor.shutdown();
-                    }
-                    System.err.println("*** server shut down");
-                }
-            });
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
 
     }
 
-    private void stop() throws InterruptedException {
+    public void stop() throws InterruptedException {
         if (this.server != null) {
-            this.server.shutdown().awaitTermination(30, TimeUnit.SECONDS);
+            this.server.shutdown();
+            if(!this.server.awaitTermination(30, TimeUnit.SECONDS)) {
+                this.server.shutdownNow();
+            }
+        }
+
+        if (this.executor != null) {
+            this.executor.shutdown();
+            if (!this.executor.awaitTermination(30, TimeUnit.SECONDS)) {
+                this.executor.shutdownNow();
+            }
         }
     }
 

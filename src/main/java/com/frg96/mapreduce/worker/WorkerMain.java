@@ -12,6 +12,17 @@ public class WorkerMain {
         System.out.println("Starting server on " + address);
         final Worker worker = new Worker(address);
         worker.start();
+
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            // Use stderr here since the logger may have been reset by its JVM shutdown hook.
+            System.err.println("*** shutting down gRPC server since JVM is shutting down");
+            try {
+                worker.stop();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }));
+
         worker.blockUntilShutdown();
     }
 }
