@@ -65,7 +65,7 @@ class IntermediateMerger {
                 HeapEntry entry = minHeap.poll();
 
                 // key changed, flushing current key and current values to reduce
-                if(currentKey != null && currentKey.equals(entry.key())) {
+                if(currentKey != null && !currentKey.equals(entry.key())) {
                     reducer.reduce(currentKey, currentValues, reducerContext);
                     currentValues.clear();
                 }
