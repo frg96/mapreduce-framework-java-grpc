@@ -14,8 +14,12 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.logging.Logger;
 
 public class Master {
+    private static final Logger logger = Logger.getLogger(Master.class.getName());
+
     private final MapReduceSpec spec;
     private final List<WorkerInfo> workerInfos = new ArrayList<>();
     private final List<ShardInfo> shardInfos = new ArrayList<>();
@@ -47,11 +51,14 @@ public class Master {
             if(!prepareFinalOutputDirectory(spec.outputDir()))
                 return false;
 
-            runMapPhase();
+            if(!runMapPhase())
+                return false;
 
-            runReducePhase();
+            if(!runReducePhase())
+                return false;
 
             return true;
+
         } finally {
             workerInfos.forEach(WorkerInfo::shutdownClient);
         }
@@ -90,28 +97,31 @@ public class Master {
         }
     }
 
-    private void runMapPhase() {
+    private boolean runMapPhase() {
         CountDownLatch latch = new CountDownLatch(shardInfos.size());
+        AtomicBoolean aborted = new AtomicBoolean(false);
 
-        for(ShardInfo shardInfo: shardInfos) {
+        for (ShardInfo shardInfo : shardInfos) {
             readyShards.offer(shardInfo.getId());
         }
 
-        try(ExecutorService executor = Executors.newFixedThreadPool(workerInfos.size())) {
-            for(WorkerInfo workerInfo: workerInfos) {
-                executor.submit(() -> mapperTask(workerInfo, latch));
+        try (ExecutorService executor = Executors.newFixedThreadPool(workerInfos.size())) {
+            for (WorkerInfo workerInfo : workerInfos) {
+                executor.submit(() -> mapperTask(workerInfo, latch, aborted));
             }
 
             await(latch);
 
-            for(int i = 0; i < workerInfos.size(); i++) {
+            for (int i = 0; i < workerInfos.size(); i++) {
                 readyShards.offer(POISON_PILL);
             }
         } // executor will auto close
+
+        return !aborted.get();
     }
 
-    private void mapperTask(WorkerInfo workerInfo, CountDownLatch latch) {
-        while(!Thread.currentThread().isInterrupted()) {
+    private void mapperTask(WorkerInfo workerInfo, CountDownLatch latch, AtomicBoolean aborted) {
+        while(!Thread.currentThread().isInterrupted() && !aborted.get()) {
             int shardId;
 
             try {
@@ -125,6 +135,10 @@ public class Master {
                 return;
             }
 
+            if(aborted.get()) {
+                return;
+            }
+
             ShardInfo shard = shardInfos.get(shardId);
             shard.setStatus(TaskStatus.IN_PROGRESS);
             workerInfo.setWorkerStatus(WorkerStatus.BUSY);
@@ -134,6 +148,10 @@ public class Master {
 
                 // Blocking RPC Call
                 MapperOutput output = workerInfo.getClient().callMapper(input);
+
+                if(aborted.get()) {
+                    return;
+                }
 
                 shard.setStatus(TaskStatus.COMPLETED);
 
@@ -149,6 +167,7 @@ public class Master {
                 readyShards.offer(shardId);
 
                 if(handleWorkerFailure(workerInfo, e)) {
+                    abortIfNoUsableWorkers(latch, aborted);
                     return;
                 }
             }
@@ -177,21 +196,27 @@ public class Master {
         return builder.build();
     }
 
-    private void runReducePhase() {
+    private boolean runReducePhase() {
+        List<WorkerInfo> activeWorkers = workerInfos.stream()
+                .filter(workerInfo -> workerInfo.getWorkerStatus() != WorkerStatus.DEAD)
+                .filter(workerInfo -> workerInfo.getWorkerStatus() != WorkerStatus.SLOW)
+                .toList();
+
+        if(activeWorkers.isEmpty()) {
+            logger.severe("No active workers available for reduce phase");
+            return false;
+        }
+
         CountDownLatch latch = new CountDownLatch(partitionInfos.size());
+        AtomicBoolean aborted = new AtomicBoolean(false);
 
         for(PartitionInfo partitionInfo: partitionInfos) {
             readyPartitions.offer(partitionInfo.getId());
         }
 
-        List<WorkerInfo> activeWorkers = workerInfos.stream()
-                .filter(workerInfo -> workerInfo.getWorkerStatus() != WorkerStatus.DEAD)
-                .filter(workerInfo ->  workerInfo.getWorkerStatus() != WorkerStatus.SLOW)
-                .toList();
-
         try(ExecutorService executor = Executors.newFixedThreadPool(activeWorkers.size())) {
             for(WorkerInfo workerInfo: activeWorkers) {
-                executor.submit(() -> reducerTask(workerInfo, latch));
+                executor.submit(() -> reducerTask(workerInfo, latch, aborted));
             }
 
             await(latch);
@@ -200,10 +225,12 @@ public class Master {
                 readyPartitions.offer(POISON_PILL);
             }
         } // executor will auto close
+
+        return !aborted.get();
     }
 
-    private void reducerTask(WorkerInfo workerInfo, CountDownLatch latch) {
-        while(!Thread.currentThread().isInterrupted()) {
+    private void reducerTask(WorkerInfo workerInfo, CountDownLatch latch, AtomicBoolean aborted) {
+        while(!Thread.currentThread().isInterrupted() && !aborted.get()) {
             int partitionId;
 
             try {
@@ -217,6 +244,10 @@ public class Master {
                 return;
             }
 
+            if(aborted.get()) {
+                return;
+            }
+
             PartitionInfo partition = partitionInfos.get(partitionId);
             partition.setStatus(TaskStatus.IN_PROGRESS);
             workerInfo.setWorkerStatus(WorkerStatus.BUSY);
@@ -226,6 +257,10 @@ public class Master {
 
                 // Blocking RPC Call
                 ReducerOutput output = workerInfo.getClient().callReducer(input);
+
+                if(aborted.get()) {
+                    return;
+                }
 
                 // copying file to final output dir
                 copyReducerOutput(output.getFile().getFileName());
@@ -239,6 +274,7 @@ public class Master {
                 readyPartitions.offer(partitionId);
 
                 if(handleWorkerFailure(workerInfo, e)) {
+                    abortIfNoUsableWorkers(latch, aborted);
                     return;
                 }
             }
@@ -293,6 +329,21 @@ public class Master {
 
         worker.setWorkerStatus(WorkerStatus.IDLE);
         return false;
+    }
+
+    private void abortIfNoUsableWorkers(CountDownLatch latch, AtomicBoolean aborted) {
+        if (noUsableWorkers() && aborted.compareAndSet(false, true)) {
+            logger.severe("No usable workers remain; aborting job");
+
+            while(latch.getCount() > 0) {
+                latch.countDown();
+            }
+        }
+    }
+
+    private boolean noUsableWorkers() {
+        return workerInfos.stream()
+                .noneMatch(workerInfo -> (workerInfo.getWorkerStatus() != WorkerStatus.DEAD) && (workerInfo.getWorkerStatus() != WorkerStatus.SLOW));
     }
 
     private static void await(CountDownLatch latch) {
