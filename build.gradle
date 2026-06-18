@@ -1,6 +1,7 @@
 plugins {
     id 'java'
     id "com.google.protobuf" version "0.10.0"
+    id 'application'
 }
 
 group = 'com.frg96'
@@ -47,6 +48,41 @@ java {
 tasks.withType(JavaCompile).configureEach {
     options.release = 25
 }
+
+// To build start scripts:
+// ./gradlew clean test installDist
+
+startScripts.enabled = false
+
+def createStartScripts(String mainClassName) {
+    String bareName = mainClassName.substring(mainClassName.lastIndexOf('.') + 1)
+    String taskName = bareName.uncapitalize()
+
+    def scriptTask = tasks.register(taskName, CreateStartScripts) {
+        mainClass = mainClassName
+        applicationName = taskName.replaceAll('([A-Z])') {
+            '-' + it[0].uncapitalize()
+        }
+        outputDir = layout.buildDirectory
+                .dir("tmp/scripts/${name}")
+                .get()
+                .asFile
+        classpath = startScripts.classpath
+    }
+
+    application {
+        applicationDistribution.into('bin') {
+            from(scriptTask)
+            filePermissions {
+                unix(0755)
+            }
+        }
+    }
+}
+
+createStartScripts('com.frg96.mapreduce.worker.WorkerMain')
+
+createStartScripts('com.frg96.mapreduce.client.MapReduceMain')
 
 test {
     useJUnitPlatform()
