@@ -1,28 +1,19 @@
-package com.frg96.mapreduce.wordcount;
+package com.frg96.mapreduce.apps;
 
 import com.frg96.mapreduce.api.*;
 
 import java.util.List;
 
-public class WordCountTasks {
-    private WordCountTasks() {}
+public class WordCountTaskFactory implements TaskFactory {
 
-    public static void register(String appId) {
-        boolean registered = TaskRegistry.register(appId, new TaskFactory() {
-            @Override
-            public Mapper createMapper() {
-                return new WordCountMapper();
-            }
+    @Override
+    public Mapper createMapper() {
+        return new WordCountMapper();
+    }
 
-            @Override
-            public Reducer createReducer() {
-                return new WordCountReducer();
-            }
-        });
-
-        if(!registered) {
-            throw new IllegalStateException("Failed to register app_id: " + appId);
-        }
+    @Override
+    public Reducer createReducer() {
+        return new WordCountReducer();
     }
 
     private static final class WordCountMapper implements Mapper {

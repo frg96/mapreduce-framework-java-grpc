@@ -1,11 +1,15 @@
 package com.frg96.mapreduce.worker;
 
+import com.frg96.mapreduce.apps.BuiltInApps;
+
 public class WorkerMain {
     public static void main(String[] args) throws Exception {
         if (args.length != 1) {
             System.err.println("Usage: WorkerMain <host:port>");
             System.exit(1);
         }
+
+        BuiltInApps.registerAll();
 
         String address = args[0];
 

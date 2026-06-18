@@ -1,6 +1,7 @@
 package com.frg96.mapreduce.wordcount;
 
 import com.frg96.mapreduce.api.MapReduceJob;
+import com.frg96.mapreduce.apps.BuiltInApps;
 import com.frg96.mapreduce.testutils.TestFixture;
 import com.frg96.mapreduce.testutils.TestUtils;
 import com.frg96.mapreduce.worker.Worker;
@@ -17,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class WordCountIntegrationTest {
-    private static final String APP_ID = "frg96-wordcount-test";
+    private static final String APP_ID = "wordcount";
 
     private final List<String> workerAddresses = List.of(
             "localhost:50051",
@@ -32,7 +33,7 @@ public class WordCountIntegrationTest {
 
     @BeforeAll
     void startWorkers() {
-        WordCountTasks.register(APP_ID);
+        BuiltInApps.registerAll();
 
         for (String address : workerAddresses) {
             Worker worker = new Worker(address);
