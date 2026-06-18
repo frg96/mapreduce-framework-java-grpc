@@ -42,3 +42,6 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+### frg96 files ###
+src/test/resources/input_files/wordcount/input_large_single/testdata_1.txt
