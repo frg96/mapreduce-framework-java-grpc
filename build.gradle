@@ -1,7 +1,6 @@
 plugins {
     id 'java'
     id "com.google.protobuf" version "0.10.0"
-    id 'application'
 }
 
 group = 'com.frg96'
@@ -48,34 +47,6 @@ java {
 tasks.withType(JavaCompile).configureEach {
     options.release = 25
 }
-
-startScripts.enabled = false
-
-// Creates start scripts for a class name and adds it to the distribution. The
-// base class name is used to name the task and scripts. For example, passed
-// the class io.grpc.examples.helloworld.HelloWorldClient, it creates the task
-// helloWorldClient with script name hello-world-client.
-def createStartScripts(String mainClassName) {
-    String bareName = mainClassName.substring(mainClassName.lastIndexOf('.') + 1);
-    String taskName = bareName.uncapitalize();
-    def newTask = tasks.register(taskName, CreateStartScripts) {
-        mainClass = mainClassName
-        applicationName = taskName.replaceAll('([A-Z])') { '-' + it[0].uncapitalize() }
-        outputDir = new File(project.buildDir, 'tmp/scripts/' + name)
-        classpath = startScripts.classpath
-    }
-    application {
-        applicationDistribution.into('bin') {
-            from(newTask)
-            filePermissions {
-                unix(0755)
-            }
-        }
-    }
-}
-
-createStartScripts('com.frg96.helloworld.HelloWorldClient')
-createStartScripts('com.frg96.helloworld.HelloWorldServer')
 
 test {
     useJUnitPlatform()
