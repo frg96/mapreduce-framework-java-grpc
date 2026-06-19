@@ -8,10 +8,14 @@ import com.frg96.mapreduce.worker.Worker;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -111,11 +115,20 @@ public class WordCountIntegrationTest {
     }
 
     @Test
-    @DisplayName("Word Count Intg Test for single large-sized Input Files")
+    @DisplayName("Word Count Intg Test for single large-sized Input File")
     void wordCountLargeSingleInput(@TempDir Path tempDir) throws Exception {
+        Path zipFile = Path.of("src/test/resources/input_files/wordcount/input_large_single/testdata_1.txt.zip");
+
+        Path extractedInputDir = tempDir.resolve("large-input");
+        Files.createDirectories(extractedInputDir);
+
+        Path extractedInputFile = extractedInputDir.resolve("testdata_1.txt");
+
+        extractZipEntry(zipFile, "testdata_1.txt", extractedInputFile);
+
         TestFixture fixture = TestUtils.createTestFixture(
                 tempDir,
-                Path.of("src/test/resources/input_files/wordcount/input_large_single"),
+                extractedInputDir,
                 6,
                 workerAddresses,
                 List.of("testdata_1.txt"),
@@ -141,6 +154,22 @@ public class WordCountIntegrationTest {
     }
 
 
+    private static void extractZipEntry(Path zipFile, String entryName, Path destination) throws IOException {
+        try (ZipFile archive = new ZipFile(zipFile.toFile())) {
+            ZipEntry entry = archive.getEntry(entryName);
 
+            if (entry == null) {
+                throw new IOException("ZIP entry not found: " + entryName);
+            }
+
+            if (entry.isDirectory()) {
+                throw new IOException("Expected a file but found a directory: " + entryName);
+            }
+
+            try (InputStream input = archive.getInputStream(entry)) {
+                Files.copy(input, destination, StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
+    }
 
 }
