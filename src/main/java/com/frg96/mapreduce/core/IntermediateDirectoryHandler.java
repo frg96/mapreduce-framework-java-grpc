@@ -1,14 +1,19 @@
 package com.frg96.mapreduce.core;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Manages mapper and reducer intermediate-output directories.
  */
 public class IntermediateDirectoryHandler {
+    private static final Logger LOGGER = Logger.getLogger(IntermediateDirectoryHandler.class.getName());
+
     private IntermediateDirectoryHandler() {}
 
     /**
@@ -31,8 +36,7 @@ public class IntermediateDirectoryHandler {
                                 try{
                                     Files.delete(path);
                                 } catch (IOException e) {
-                                    System.err.println("Failed to delete intermediate file: " + path);
-                                    throw new RuntimeException(e);
+                                    throw new UncheckedIOException(e);
                                 }
                             });
                 }
@@ -41,10 +45,20 @@ public class IntermediateDirectoryHandler {
             Files.createDirectories(Path.of(intermediateDir.toString(), "mapper"));
             Files.createDirectories(Path.of(intermediateDir.toString(), "reducer"));
 
+            LOGGER.log(
+                    Level.INFO,
+                    "Prepared intermediate directory: {0}",
+                    intermediateDir
+            );
+
             return true;
 
-        } catch (IOException e) {
-            System.err.println("Failed to prepare intermediate directory: " + intermediateDir);
+        } catch (IOException | UncheckedIOException e ) {
+            LOGGER.log(
+                    Level.SEVERE,
+                    "Failed to prepare intermediate directory: " + intermediateDir,
+                    e
+            );
             return false;
         }
     }

@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.PriorityQueue;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -23,7 +24,7 @@ import java.util.logging.Logger;
  * loading every file into memory.</p>
  */
 class IntermediateMerger {
-    private static final Logger logger = Logger.getLogger(IntermediateMerger.class.getName());
+    private static final Logger LOGGER = Logger.getLogger(IntermediateMerger.class.getName());
 
     /**
      * Entry read from one intermediate file during the k-way merge.
@@ -87,6 +88,8 @@ class IntermediateMerger {
 
         List<BufferedReader> readers = new ArrayList<>();
 
+        LOGGER.log(Level.FINE, "Merging {0} intermediate files", filesList.size());
+
         try {
             // Open all input intermediate files (files are sorted by mapper)
             // Also, get smallest key line from each file and push into minHeap
@@ -128,9 +131,8 @@ class IntermediateMerger {
                 reducer.reduce(currentKey, currentValues, reducerContext);
             }
 
-        } catch (IOException e) {
-            logger.severe("Unable to read file for reducer");
-            throw e;
+            LOGGER.fine("Finished merging intermediate files");
+
         } finally {
             //close all readers
             for(BufferedReader reader : readers)

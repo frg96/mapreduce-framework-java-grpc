@@ -4,6 +4,8 @@ import com.frg96.mapreduce.core.*;
 import com.frg96.mapreduce.master.Master;
 
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Synchronous entry point for executing a MapReduce job.
@@ -13,6 +15,8 @@ import java.util.List;
  * the configured workers through gRPC.</p>
  */
 public final class MapReduceJob {
+    private static final Logger LOGGER = Logger.getLogger(MapReduceJob.class.getName());
+
     /**
      * Executes the job described by a configuration file.
      *
@@ -29,12 +33,20 @@ public final class MapReduceJob {
      * @return {@code true} when the job completes successfully; otherwise {@code false}
      */
     public boolean run(String configFilePath) {
+        LOGGER.log(Level.INFO, "Loading job configuration from {0}", configFilePath);
+
         // Parse the config file and validate the spec
         MapReduceSpec spec = SpecParser.parse(configFilePath);
 
         if(!SpecValidator.validate(spec)) {
             return false;
         }
+
+        LOGGER.log(
+                Level.INFO,
+                "Starting application {0} with {1} workers and {2} partitions",
+                new Object[]{spec.appId(), spec.numWorkers(), spec.numPartitions()}
+        );
 
         // Prepare the intermediate directory
         if(!IntermediateDirectoryHandler.prepareIntermediateDirectory(spec.outputDir())) {
@@ -46,6 +58,13 @@ public final class MapReduceJob {
 
         // Run master
         Master master = new Master(spec, fileShards);
-        return master.run();
+        boolean successful = master.run();
+        LOGGER.log(
+                successful ? Level.INFO : Level.SEVERE,
+                successful ? "Job completed successfully" : "Job execution failed"
+        );
+
+        return successful;
+
     }
 }

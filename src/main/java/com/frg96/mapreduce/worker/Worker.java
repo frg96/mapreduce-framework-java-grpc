@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -21,7 +22,7 @@ import java.util.logging.Logger;
  * extracted from the configured {@code host:port} address.</p>
  */
 public class Worker {
-    private static final Logger logger = Logger.getLogger(Worker.class.getName());
+    private static final Logger LOGGER = Logger.getLogger(Worker.class.getName());
 
     private final String address;
 
@@ -54,7 +55,9 @@ public class Worker {
         try {
             int port = parsePort(address);
 
-            this.executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+            int threadCount = Runtime.getRuntime().availableProcessors();
+
+            this.executor = Executors.newFixedThreadPool(threadCount);
 
             this.server = Grpc.newServerBuilderForPort(port, InsecureServerCredentials.create())
                     .addService(this.service)
@@ -62,10 +65,14 @@ public class Worker {
                     .build()
                     .start();
 
-            logger.info("Server started, listening on " + port);
+            LOGGER.log(
+                    Level.INFO,
+                    "Worker started at {0}; listening on port {1} with {2} request threads",
+                    new Object[]{address, port, threadCount}
+            );
 
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new IllegalStateException("Failed to start worker at " + address, e);
         }
 
     }
@@ -79,9 +86,12 @@ public class Worker {
      * @throws InterruptedException if interrupted while waiting for termination
      */
     public void stop() throws InterruptedException {
+        LOGGER.log(Level.INFO, "Stopping worker at {0}", address);
+
         if (this.server != null) {
             this.server.shutdown();
             if(!this.server.awaitTermination(30, TimeUnit.SECONDS)) {
+                LOGGER.warning("gRPC server did not terminate gracefully; forcing shutdown");
                 this.server.shutdownNow();
             }
         }
@@ -89,9 +99,12 @@ public class Worker {
         if (this.executor != null) {
             this.executor.shutdown();
             if (!this.executor.awaitTermination(30, TimeUnit.SECONDS)) {
+                LOGGER.warning("Worker executor did not terminate gracefully; forcing shutdown");
                 this.executor.shutdownNow();
             }
         }
+
+        LOGGER.log(Level.INFO, "Worker stopped at {0}", address);
     }
 
     /**

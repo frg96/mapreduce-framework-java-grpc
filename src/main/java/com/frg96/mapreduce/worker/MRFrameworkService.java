@@ -36,7 +36,7 @@ import java.util.logging.Logger;
  * worker-generated file names.</p>
  */
 public class MRFrameworkService extends MRFrameworkGrpc.MRFrameworkImplBase {
-    private static final Logger logger = Logger.getLogger(MRFrameworkService.class.getName());
+    private static final Logger LOGGER = Logger.getLogger(MRFrameworkService.class.getName());
 
     private final String address;
 
@@ -71,9 +71,18 @@ public class MRFrameworkService extends MRFrameworkGrpc.MRFrameworkImplBase {
      */
     @Override
     public void mapper(MapperInput request, StreamObserver<MapperOutput> responseObserver) {
+        int currentMapperCounter = mapperCounter.incrementAndGet();
         try {
-            int currentMapperCounter = mapperCounter.incrementAndGet();
-            logger.info("Started mapper() call # " + currentMapperCounter);
+            LOGGER.log(
+                    Level.INFO,
+                    "Mapper task {0} started: app={1}, splits={2}, partitions={3}",
+                    new Object[]{
+                            currentMapperCounter,
+                            request.getAppId(),
+                            request.getInputSplitsCount(),
+                            request.getNumPartitions()
+                    }
+            );
 
             long startTime = System.nanoTime();
 
@@ -113,8 +122,10 @@ public class MRFrameworkService extends MRFrameworkGrpc.MRFrameworkImplBase {
                     file.seek(start);
                     file.readFully(buffer);
                 } catch (IOException e) {
-                    logger.severe("Failed to read file: " + shardSplit.getFileName());
-                    throw new RuntimeException(e);
+                    throw new IOException(
+                            "Failed to read mapper input: " + shardSplit.getFileName(),
+                            e
+                    );
                 }
 
                 try (BufferedReader reader = new BufferedReader(
@@ -127,8 +138,10 @@ public class MRFrameworkService extends MRFrameworkGrpc.MRFrameworkImplBase {
                         userMapper.map(line, mapperContext);
                     }
                 } catch (IOException e) {
-                    logger.severe("Failed to read line from file: " + shardSplit.getFileName());
-                    throw new RuntimeException(e);
+                    throw new IOException(
+                            "Failed to read line from file: " + shardSplit.getFileName(),
+                            e
+                    );
                 }
             }
 
@@ -146,14 +159,27 @@ public class MRFrameworkService extends MRFrameworkGrpc.MRFrameworkImplBase {
             responseObserver.onCompleted();
 
             long endTime = System.nanoTime();
-            logger.info("Finished mapper() call # " + currentMapperCounter + " in " + (endTime - startTime) / 1_000_000 + " ms");
+            LOGGER.log(
+                    Level.INFO,
+                    "Mapper task {0} completed in {1} ms",
+                    new Object[]{currentMapperCounter, (endTime - startTime) / 1_000_000}
+            );
 
 
         } catch(Exception e) {
-            logger.severe("Failed to execute mapper() call");
+            LOGGER.log(
+                    Level.SEVERE,
+                    "Mapper task " + currentMapperCounter + " failed for application " + request.getAppId(),
+                    e
+            );
+
+            String description = e.getMessage() != null
+                    ? e.getMessage()
+                    : e.getClass().getSimpleName();
+
             responseObserver.onError(
                     Status.INTERNAL
-                            .withDescription(e.getMessage())
+                            .withDescription(description)
                             .withCause(e)
                             .asRuntimeException()
             );
@@ -177,9 +203,18 @@ public class MRFrameworkService extends MRFrameworkGrpc.MRFrameworkImplBase {
      */
     @Override
     public void reducer(ReducerInput request, StreamObserver<ReducerOutput> responseObserver) {
+        int currentReducerCounter = reducerCounter.incrementAndGet();
         try {
-            int currentReducerCounter = reducerCounter.incrementAndGet();
-            logger.info("Started reducer() call # " + currentReducerCounter);
+            LOGGER.log(
+                    Level.INFO,
+                    "Reducer task {0} started: app={1}, partition={2}, files={3}",
+                    new Object[]{
+                            currentReducerCounter,
+                            request.getAppId(),
+                            request.getPartitionId(),
+                            request.getFilesCount()
+                    }
+            );
 
             long startTime = System.nanoTime();
 
@@ -221,15 +256,27 @@ public class MRFrameworkService extends MRFrameworkGrpc.MRFrameworkImplBase {
             responseObserver.onCompleted();
 
             long endTime = System.nanoTime();
-            logger.info("Finished reducer() call # " + currentReducerCounter + " in " + (endTime - startTime) / 1_000_000 + " ms");
+            LOGGER.log(
+                    Level.INFO,
+                    "Reducer task {0} completed in {1} ms",
+                    new Object[]{currentReducerCounter, (endTime - startTime) / 1_000_000}
+            );
 
 
         }  catch(Exception e) {
-            logger.log(Level.SEVERE, "Failed to execute reducer() call", e);
+            LOGGER.log(
+                    Level.SEVERE,
+                    "Reducer task " + currentReducerCounter + " failed for application " + request.getAppId(),
+                    e
+            );
+
+            String description = e.getMessage() != null
+                    ? e.getMessage()
+                    : e.getClass().getSimpleName();
 
             responseObserver.onError(
                     Status.INTERNAL
-                            .withDescription(e.getMessage())
+                            .withDescription(description)
                             .withCause(e)
                             .asRuntimeException()
             );

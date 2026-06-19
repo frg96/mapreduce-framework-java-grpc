@@ -7,6 +7,7 @@ import io.grpc.ManagedChannel;
 import io.grpc.StatusRuntimeException;
 
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -20,7 +21,7 @@ import java.util.logging.Logger;
  * intended for trusted environments.</p>
  */
 class MRFrameworkClient {
-    private static final Logger logger = Logger.getLogger(MRFrameworkClient.class.getName());
+    private static final Logger LOGGER = Logger.getLogger(MRFrameworkClient.class.getName());
 
     private static final int MAPPER_TIMEOUT_SECONDS = 10;
     private static final int REDUCER_TIMEOUT_SECONDS = 10;
@@ -38,6 +39,8 @@ class MRFrameworkClient {
                 .build();
 
         this.stub = MRFrameworkGrpc.newBlockingStub(channel);
+
+        LOGGER.log(Level.INFO, "Created worker channel for {0}", workerAddress);
     }
 
     /**
@@ -83,11 +86,12 @@ class MRFrameworkClient {
         try {
             channel.shutdown();
             if(!channel.awaitTermination(5, TimeUnit.SECONDS)) {
+                LOGGER.warning("Worker channel did not terminate gracefully; forcing shutdown");
                 channel.shutdownNow();
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            logger.severe("MRFrameworkClient shutdown interrupted");
+            LOGGER.log(Level.WARNING, "Interrupted while shutting down worker channel", e);
         }
     }
 

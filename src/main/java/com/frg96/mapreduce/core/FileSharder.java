@@ -4,6 +4,8 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Divides configured input files into line-aligned mapper shards.
@@ -12,6 +14,8 @@ import java.util.List;
  * splitting a line. A shard may contain ranges from multiple input files.</p>
  */
 public class FileSharder {
+    private static final Logger LOGGER = Logger.getLogger(FileSharder.class.getName());
+
     private FileSharder() {}
 
     /**
@@ -28,18 +32,18 @@ public class FileSharder {
 
 
         int numInputFiles = spec.inputFiles().size();
-        System.out.println("Number of input files: " + numInputFiles);
+        LOGGER.info("Number of input files: " + numInputFiles);
 
-        long totatFilesSizeBytes = 0L;
+        long totalFilesSizeBytes = 0L;
         for(InputFile inputFile: spec.inputFiles()) {
-            totatFilesSizeBytes += inputFile.fileSizeBytes();
+            totalFilesSizeBytes += inputFile.fileSizeBytes();
         }
-        System.out.println("Total size of input files: " + totatFilesSizeBytes + " bytes");
+        LOGGER.info("Total size of input files: " + totalFilesSizeBytes + " bytes");
 
         long shardSizeBytes = spec.shardSizeKb() * 1024L;
 
-        int numShards = (int) Math.ceil((double) totatFilesSizeBytes / shardSizeBytes);
-        System.out.println("Number of shards: " + numShards);
+        int numShards = (int) Math.ceil((double) totalFilesSizeBytes / shardSizeBytes);
+        LOGGER.info("Number of shards: " + numShards);
 
         FileShard currentShard = new FileShard();
         long remainingShardSizeBytes = shardSizeBytes;
@@ -98,18 +102,26 @@ public class FileSharder {
             fileShards.add(currentShard);
         }
 
-        // DEBUG
-        System.out.println("Size of fileShards: " + fileShards.size());
+        LOGGER.log(Level.INFO, "Created {0} input shards", fileShards.size());
 
-        //
         for(int i = 0; i < fileShards.size(); i++) {
-            System.out.println("Shard no.: " + i);
             FileShard fileShard = fileShards.get(i);
 
             for(int j = 0; j < fileShard.getFileNames().size(); j++) {
-                System.out.println("File name index: " + j + " " + fileShard.getFileNames().get(j) + " <" + fileShard.getOffsetRanges().get(j).startOffset() + ", " + fileShard.getOffsetRanges().get(j).endOffset() + ">");
+                FileShard.OffsetRange range = fileShard.getOffsetRanges().get(j);
+
+                LOGGER.log(
+                        Level.INFO,
+                        "Shard {0}, segment {1}: {2} [{3}, {4})",
+                        new Object[]{
+                                i,
+                                j,
+                                fileShard.getFileNames().get(j),
+                                range.startOffset(),
+                                range.endOffset()
+                        }
+                );
             }
-            System.out.println();
         }
 
         return fileShards;

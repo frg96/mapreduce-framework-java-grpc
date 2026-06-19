@@ -7,6 +7,7 @@ import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -15,6 +16,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -32,7 +34,7 @@ import java.util.logging.Logger;
  * <p>A {@code Master} instance represents one job and should not be reused.</p>
  */
 public class Master {
-    private static final Logger logger = Logger.getLogger(Master.class.getName());
+    private static final Logger LOGGER = Logger.getLogger(Master.class.getName());
 
     private final MapReduceSpec spec;
     private final List<WorkerInfo> workerInfos = new ArrayList<>();
@@ -75,6 +77,17 @@ public class Master {
      */
     public boolean run() {
         try{
+            LOGGER.log(
+                    Level.INFO,
+                    "Starting master for application {0}: workers={1}, shards={2}, partitions={3}",
+                    new Object[]{
+                            spec.appId(),
+                            workerInfos.size(),
+                            shardInfos.size(),
+                            partitionInfos.size()
+                    }
+            );
+
             if(!prepareFinalOutputDirectory(spec.outputDir()))
                 return false;
 
@@ -107,8 +120,7 @@ public class Master {
                                 try{
                                     Files.delete(path);
                                 } catch (IOException e) {
-                                    System.err.println("Failed to delete file: " + path);
-                                    throw new RuntimeException(e);
+                                    throw new UncheckedIOException(e);
                                 }
                             });
                 }
@@ -118,8 +130,12 @@ public class Master {
 
             return true;
 
-        } catch (IOException e) {
-            System.err.println("Failed to prepare final output directory: " + finalOutputDir);
+        } catch (IOException | UncheckedIOException e) {
+            LOGGER.log(
+                    Level.SEVERE,
+                    "Failed to prepare final output directory: " + finalOutputDir,
+                    e
+            );
             return false;
         }
     }
@@ -131,6 +147,8 @@ public class Master {
      *         {@code false} if the phase is aborted
      */
     private boolean runMapPhase() {
+        LOGGER.log(Level.INFO, "Starting map phase with {0} shards", shardInfos.size());
+
         CountDownLatch latch = new CountDownLatch(shardInfos.size());
         AtomicBoolean aborted = new AtomicBoolean(false);
 
@@ -150,7 +168,13 @@ public class Master {
             }
         } // executor will auto close
 
-        return !aborted.get();
+        boolean successful = !aborted.get();
+        LOGGER.log(
+                successful ? Level.INFO : Level.WARNING,
+                successful ? "Map phase completed" : "Map phase aborted"
+        );
+
+        return successful;
     }
 
     /**
@@ -181,6 +205,12 @@ public class Master {
                 return;
             }
 
+            LOGGER.log(
+                    Level.FINE,
+                    "Assigning shard {0} to worker {1} at {2}",
+                    new Object[]{shardId, workerInfo.getId(), workerInfo.getAddress()}
+            );
+
             ShardInfo shard = shardInfos.get(shardId);
             shard.setStatus(TaskStatus.IN_PROGRESS);
             workerInfo.setWorkerStatus(WorkerStatus.BUSY);
@@ -189,6 +219,7 @@ public class Master {
                 MapperInput input = buildMapperInput(shard.getFileShard());
 
                 // Blocking RPC Call
+                LOGGER.info("Making a blocking gRPC call to mapper");
                 MapperOutput output = workerInfo.getClient().callMapper(input);
 
                 if(aborted.get()) {
@@ -212,6 +243,21 @@ public class Master {
                     abortIfNoUsableWorkers(latch, aborted);
                     return;
                 }
+            } catch (RuntimeException e) {
+                workerInfo.setWorkerStatus(WorkerStatus.IDLE);
+
+                shard.setStatus(TaskStatus.READY);
+                readyShards.offer(shardId);
+
+                abortPhase(
+                        latch,
+                        aborted,
+                        "Unexpected mapper task failure for shard "
+                                + shardId + " on worker "
+                                + workerInfo.getAddress(),
+                        e
+                );
+                return;
             }
         }
     }
@@ -255,13 +301,19 @@ public class Master {
      *         {@code false} if no active workers remain or the phase is aborted
      */
     private boolean runReducePhase() {
+        LOGGER.log(
+                Level.INFO,
+                "Starting reduce phase with {0} partitions",
+                partitionInfos.size()
+        );
+
         List<WorkerInfo> activeWorkers = workerInfos.stream()
                 .filter(workerInfo -> workerInfo.getWorkerStatus() != WorkerStatus.DEAD)
                 .filter(workerInfo -> workerInfo.getWorkerStatus() != WorkerStatus.SLOW)
                 .toList();
 
         if(activeWorkers.isEmpty()) {
-            logger.severe("No active workers available for reduce phase");
+            LOGGER.severe("No active workers available for reduce phase");
             return false;
         }
 
@@ -284,7 +336,13 @@ public class Master {
             }
         } // executor will auto close
 
-        return !aborted.get();
+        boolean successful = !aborted.get();
+        LOGGER.log(
+                successful ? Level.INFO : Level.WARNING,
+                successful ? "Reduce phase completed" : "Reduce phase aborted"
+        );
+
+        return successful;
     }
 
     /**
@@ -315,6 +373,12 @@ public class Master {
                 return;
             }
 
+            LOGGER.log(
+                    Level.FINE,
+                    "Assigning partition {0} to worker {1} at {2}",
+                    new Object[]{partitionId, workerInfo.getId(), workerInfo.getAddress()}
+            );
+
             PartitionInfo partition = partitionInfos.get(partitionId);
             partition.setStatus(TaskStatus.IN_PROGRESS);
             workerInfo.setWorkerStatus(WorkerStatus.BUSY);
@@ -323,6 +387,7 @@ public class Master {
                 ReducerInput input = buildReducerInput(partition);
 
                 // Blocking RPC Call
+                LOGGER.info("Making a blocking gRPC call to reducer");
                 ReducerOutput output = workerInfo.getClient().callReducer(input);
 
                 if(aborted.get()) {
@@ -344,6 +409,21 @@ public class Master {
                     abortIfNoUsableWorkers(latch, aborted);
                     return;
                 }
+            } catch (RuntimeException e) {
+                workerInfo.setWorkerStatus(WorkerStatus.IDLE);
+
+                partition.setStatus(TaskStatus.READY);
+                readyPartitions.offer(partitionId);
+
+                abortPhase(
+                        latch,
+                        aborted,
+                        "Unexpected reducer task failure for partition "
+                                + partitionId + " on worker "
+                                + workerInfo.getAddress(),
+                        e
+                );
+                return;
             }
         }
     }
@@ -389,6 +469,11 @@ public class Master {
                     source.getFileName().toString()
             );
 
+            LOGGER.log(
+                    Level.FINE,
+                    "Copying reducer output from {0} to {1}",
+                    new Object[]{source, destination}
+            );
             Files.copy(source, destination, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             throw new IllegalStateException("Failed to copy reducer output", e);
@@ -411,15 +496,33 @@ public class Master {
         Status.Code code = e.getStatus().getCode();
 
         if (code == Status.Code.DEADLINE_EXCEEDED) {
+            LOGGER.log(
+                    Level.WARNING,
+                    "Worker " + worker.getAddress()
+                            + " exceeded its deadline and will be marked slow",
+                    e
+            );
             worker.setWorkerStatus(WorkerStatus.SLOW);
             return true;
         }
 
         if (code == Status.Code.UNAVAILABLE) {
+            LOGGER.log(
+                    Level.WARNING,
+                    "Worker " + worker.getAddress()
+                            + " is unavailable and will be marked dead",
+                    e
+            );
             worker.setWorkerStatus(WorkerStatus.DEAD);
             return true;
         }
 
+        LOGGER.log(
+                Level.WARNING,
+                "Task failed on worker " + worker.getAddress()
+                        + "; worker remains available",
+                e
+        );
         worker.setWorkerStatus(WorkerStatus.IDLE);
         return false;
     }
@@ -435,7 +538,7 @@ public class Master {
      */
     private void abortIfNoUsableWorkers(CountDownLatch latch, AtomicBoolean aborted) {
         if (noUsableWorkers() && aborted.compareAndSet(false, true)) {
-            logger.severe("No usable workers remain; aborting job");
+            LOGGER.severe("No usable workers remain; aborting job");
 
             while(latch.getCount() > 0) {
                 latch.countDown();
@@ -466,6 +569,21 @@ public class Master {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("Interrupted while waiting for tasks", e);
+        }
+    }
+
+    private void abortPhase(
+            CountDownLatch latch,
+            AtomicBoolean aborted,
+            String message,
+            RuntimeException exception
+    ) {
+        if (aborted.compareAndSet(false, true)) {
+            LOGGER.log(Level.SEVERE, message, exception);
+
+            while (latch.getCount() > 0) {
+                latch.countDown();
+            }
         }
     }
 }

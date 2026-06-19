@@ -2,6 +2,9 @@ package com.frg96.mapreduce.client;
 
 import com.frg96.mapreduce.api.MapReduceJob;
 
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 /**
  * Command-line entry point for running a MapReduce job.
  *
@@ -11,20 +14,28 @@ import com.frg96.mapreduce.api.MapReduceJob;
  * when validation or execution fails.</p>
  */
 public final class MapReduceMain {
+    private static final Logger LOGGER = Logger.getLogger(MapReduceMain.class.getName());
+
     private MapReduceMain() {}
 
     public static void main(String[] args) {
         if (args.length != 1) {
-            System.err.println("Usage: MapReduceMain <config.properties>");
+            LOGGER.severe("Usage: MapReduceMain <config.properties>");
             System.exit(1);
         }
 
         try {
             boolean successful = new MapReduceJob().run(args[0]);
+
+            if (successful) {
+                LOGGER.info("MapReduce job completed successfully");
+            } else {
+                LOGGER.severe("MapReduce job failed");
+            }
+
             System.exit(successful ? 0 : 1);
         } catch (Exception e) {
-            System.err.println("MapReduce job failed: " + e.getMessage());
-            e.printStackTrace(System.err);
+            LOGGER.log(Level.SEVERE, "MapReduce job terminated unexpectedly", e);
             System.exit(1);
         }
     }
