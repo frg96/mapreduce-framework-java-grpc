@@ -2,6 +2,14 @@ package com.frg96.mapreduce.client;
 
 import com.frg96.mapreduce.api.MapReduceJob;
 
+/**
+ * Command-line entry point for running a MapReduce job.
+ *
+ * <p>The program accepts the path to a job configuration file, creates
+ * an in-process master, and coordinates the configured standalone workers.
+ * It exits with status {@code 0} when the job succeeds and status {@code 1}
+ * when validation or execution fails.</p>
+ */
 public final class MapReduceMain {
     private MapReduceMain() {}
 

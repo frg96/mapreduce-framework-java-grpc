@@ -9,6 +9,16 @@ import io.grpc.StatusRuntimeException;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
+/**
+ * Blocking gRPC client used by the master to execute tasks on a worker.
+ *
+ * <p>Each client owns a channel to one worker and applies a deadline to
+ * mapper and reducer requests. The channel must be released with
+ * {@link #shutdown()} when the job finishes.</p>
+ *
+ * <p>The current implementation uses insecure channel credentials and is
+ * intended for trusted environments.</p>
+ */
 class MRFrameworkClient {
     private static final Logger logger = Logger.getLogger(MRFrameworkClient.class.getName());
 
@@ -18,6 +28,11 @@ class MRFrameworkClient {
     private final ManagedChannel channel;
     private final MRFrameworkGrpc.MRFrameworkBlockingStub stub;
 
+    /**
+     * Creates a client connected to the given worker.
+     *
+     * @param workerAddress worker address in {@code host:port} format
+     */
     MRFrameworkClient(String workerAddress) {
         this.channel = Grpc.newChannelBuilder(workerAddress, InsecureChannelCredentials.create())
                 .build();
@@ -25,18 +40,45 @@ class MRFrameworkClient {
         this.stub = MRFrameworkGrpc.newBlockingStub(channel);
     }
 
+    /**
+     * Executes a mapper task using the configured worker.
+     *
+     * <p>This is a blocking call with a deadline of
+     * {@value #MAPPER_TIMEOUT_SECONDS} seconds.</p>
+     *
+     * @param input mapper task request
+     * @return mapper result containing intermediate partition files
+     * @throws StatusRuntimeException if the RPC fails or exceeds its deadline
+     */
     MapperOutput callMapper(MapperInput input) throws StatusRuntimeException {
         return stub
                 .withDeadlineAfter(MAPPER_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 .mapper(input);
     }
 
+    /**
+     * Executes a reducer task using the configured worker.
+     *
+     * <p>This is a blocking call with a deadline of
+     * {@value #REDUCER_TIMEOUT_SECONDS} seconds.</p>
+     *
+     * @param input reducer task request
+     * @return reducer result containing the generated output file
+     * @throws StatusRuntimeException if the RPC fails or exceeds its deadline
+     */
     ReducerOutput callReducer(ReducerInput input) throws StatusRuntimeException {
         return stub
                 .withDeadlineAfter(REDUCER_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 .reducer(input);
     }
 
+    /**
+     * Gracefully shuts down the worker channel.
+     *
+     * <p>If the channel does not terminate within five seconds, it is forcibly
+     * closed. If interrupted while waiting, this method restores the thread's
+     * interrupted status and logs the interruption.</p>
+     */
     void shutdown(){
         try {
             channel.shutdown();

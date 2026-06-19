@@ -11,15 +11,22 @@ import java.util.List;
 import java.util.Properties;
 
 /**
- * Utility class for parsing the config.properties file.
+ * Parses Java properties files into {@link MapReduceSpec} instances.
+ *
+ * <p>Parsing also captures each input file's current size. Semantic checks
+ * such as worker counts and directory validity are handled separately by
+ * {@link SpecValidator}.</p>
  */
 public class SpecParser {
     private SpecParser() {}
 
     /**
-     * Parses the config.properties file and returns a MapReduceSpec object.
-     * @param configFilePath path to the config.properties file
-     * @return MapReduceSpec object
+     * Parses a job configuration file.
+     *
+     * @param configFilePath path to the properties file
+     * @return parsed job specification
+     * @throws IllegalArgumentException if the file, a required property, an
+     *                                  input path, or a numeric value is invalid
      */
     public static MapReduceSpec parse(String configFilePath) {
         Properties properties = new Properties();
@@ -50,6 +57,7 @@ public class SpecParser {
         return new MapReduceSpec(numWorkers, workerAddresses, inputFiles, outputDir, numPartitions, shardSizeKb, appId);
     }
 
+    /** Returns a required, stripped property value. */
     private static String requiredValue(Properties properties, String key) {
         String value = properties.getProperty(key);
 
@@ -60,6 +68,7 @@ public class SpecParser {
         return value.strip();
     }
 
+    /** Creates input metadata by reading the file's current size. */
     private static InputFile toInputFile(String filePath) {
         Path path = Path.of(filePath);
 

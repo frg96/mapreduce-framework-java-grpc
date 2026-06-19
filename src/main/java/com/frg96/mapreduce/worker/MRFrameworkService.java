@@ -18,8 +18,22 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Implementation of the MRFrameworkGrpc.MRFrameworkImplBase interface.
- * Handles RPC calls from the client.
+ * Worker-side gRPC service that executes mapper and reducer tasks.
+ *
+ * <p>For each request, the service resolves the user-defined task through
+ * {@link TaskRegistry} using the request's application ID. Mapper requests
+ * read their assigned input byte ranges and write partitioned intermediate
+ * files. Reducer requests merge intermediate files and write one partition
+ * result.</p>
+ *
+ * <p>Input and output paths refer to the worker's filesystem. Consequently,
+ * the client and all workers must have access to the same paths. Execution
+ * failures are returned to the caller as gRPC
+ * {@link io.grpc.Status.Code#INTERNAL} errors.</p>
+ *
+ * <p>The gRPC server may invoke this service concurrently. Per-request state
+ * is kept local, while atomic counters provide unique task numbers for
+ * worker-generated file names.</p>
  */
 public class MRFrameworkService extends MRFrameworkGrpc.MRFrameworkImplBase {
     private static final Logger logger = Logger.getLogger(MRFrameworkService.class.getName());
@@ -29,6 +43,11 @@ public class MRFrameworkService extends MRFrameworkGrpc.MRFrameworkImplBase {
     private final AtomicInteger mapperCounter;
     private final AtomicInteger reducerCounter;
 
+    /**
+     * Creates a worker service associated with a server address.
+     *
+     * @param address worker address used to identify generated output files
+     */
     public MRFrameworkService(String address) {
         this.address = address;
         this.mapperCounter = new AtomicInteger(0);
@@ -36,9 +55,19 @@ public class MRFrameworkService extends MRFrameworkGrpc.MRFrameworkImplBase {
     }
 
     /**
-     * Server side implementation of the mapper() rpc method.
-     * @param request MapperInput object passed by the client
-     * @param responseObserver StreamObserver object used to send back the MapperOutput
+     * Executes a mapper task.
+     *
+     * <p>The request identifies the registered application, input byte ranges,
+     * partition count, and output directory. Each input range is read, passed
+     * line by line to the application's mapper, and flushed into one sorted
+     * intermediate file per partition.</p>
+     *
+     * <p>Successful execution sends one {@link MapperOutput} and completes the
+     * response stream. Failures are reported through
+     * {@link StreamObserver#onError(Throwable)}.</p>
+     *
+     * @param request mapper task and input-shard description
+     * @param responseObserver observer that receives the mapper result or error
      */
     @Override
     public void mapper(MapperInput request, StreamObserver<MapperOutput> responseObserver) {
@@ -132,9 +161,19 @@ public class MRFrameworkService extends MRFrameworkGrpc.MRFrameworkImplBase {
     }
 
     /**
-     * Server side implementation of the reducer() rpc method.
-     * @param request ReducerInput object passed by the client
-     * @param responseObserver StreamObserver object used to send back the ReducerOutput
+     * Executes a reducer task.
+     *
+     * <p>The request identifies the registered application, reduce partition,
+     * intermediate input files, and output directory. Sorted intermediate files
+     * are merged by key and passed to the application's reducer. The emitted
+     * records are flushed to a partition output file.</p>
+     *
+     * <p>Successful execution sends one {@link ReducerOutput} and completes the
+     * response stream. Failures are reported through
+     * {@link StreamObserver#onError(Throwable)}.</p>
+     *
+     * @param request reducer task and intermediate-file description
+     * @param responseObserver observer that receives the reducer result or error
      */
     @Override
     public void reducer(ReducerInput request, StreamObserver<ReducerOutput> responseObserver) {

@@ -13,8 +13,13 @@ import java.util.Map;
 import java.util.TreeMap;
 
 /**
- * Implementation of the {@link MapperContext} interface.
- * Handles partitioning, buffering, sorting, and flushing mapper output.
+ * Worker-side implementation of {@link MapperContext}.
+ *
+ * <p>Emitted key-value pairs are partitioned using the key's hash. Each
+ * partition stores its keys in lexicographical order so its intermediate
+ * file can later participate in the reducer's k-way merge.</p>
+ *
+ * <p>This context is created for one mapper task and is not thread-safe.</p>
  */
 class MapperContextImpl implements MapperContext {
 
@@ -23,13 +28,23 @@ class MapperContextImpl implements MapperContext {
     private final List<Path> intermediateFiles;
 
     /**
-     * A list of TreeMap objects, where each list index corresponds to a partition.
+     * In-memory mapper output indexed by partition ID.
+     *
+     * <p>This is a list of {@link TreeMap} objects, where each list index corresponds to a partition.
      * The TreeMap objects are used to store sorted key-value pairs after mapping.
      * The keys in the TreeMap objects are the original keys from the input data.
-     * The values in the TreeMap objects are lists of values associated with the original key.
+     * The values in the TreeMap objects are lists of values associated with the original key.</p>
      */
     private final List<TreeMap<String, List<String>>> partitionedKeyValues;
 
+    /**
+     * Creates a mapper context for the given output partitions.
+     *
+     * @param numPartitions number of reducer partitions
+     * @param intermediateFiles output file for each partition; its size and
+     *                          ordering must correspond to
+     *                          {@code numPartitions}
+     */
     MapperContextImpl(int numPartitions, List<Path> intermediateFiles) {
         this.numPartitions = numPartitions;
         this.intermediateFiles = intermediateFiles;
@@ -42,10 +57,13 @@ class MapperContextImpl implements MapperContext {
     }
 
     /**
-     * Emits a key-value pair after mapping.
-     * Stores the key-value pair in the appropriate in-memory partition based on the key's hash.
-     * @param key   key to emit after mapping
-     * @param value value to emit after mapping
+     * Buffers a mapper result in the partition selected by the key's hash.
+     *
+     * <p>{@link Math#floorMod(int, int)} ensures that negative hash codes still
+     * produce a valid partition index.</p>
+     *
+     * @param key key emitted by the mapper
+     * @param value value associated with the key
      */
     @Override
     public void emit(String key, String value) {
@@ -58,8 +76,15 @@ class MapperContextImpl implements MapperContext {
     }
 
     /**
-     * Writes in-memory partitioned key-value pairs to the correct intermediate files.
-     * @throws IOException if an I/O error occurs
+     * Appends all buffered mapper results to their partition-specific
+     * intermediate files.
+     *
+     * <p>Files are created when absent. Records are written in ascending key
+     * order, one key-value pair per line, with a space separating the fields.
+     * Buffered entries are not cleared by this method, so a mapper context
+     * should normally be flushed only once.</p>
+     *
+     * @throws IOException if an intermediate file cannot be opened or written
      */
     void flush() throws IOException {
         for(int i = 0; i < numPartitions; i++) {

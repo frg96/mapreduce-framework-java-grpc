@@ -3,14 +3,15 @@ package com.frg96.mapreduce.core;
 import java.util.List;
 
 /**
- * MapReduce specification object based on the config.properties file.
- * @param numWorkers number of workers
+ * Immutable configuration for one MapReduce job.
+ *
+ * @param numWorkers number of workers expected by the master
  * @param workerAddresses comma-separated list of worker addresses &lt;host:port,[host:port,...]&gt;
- * @param inputFiles comma-separated list of input files paths
- * @param outputDir output directory path
- * @param numPartitions number of Reducer partitions / output files generated
- * @param shardSizeKb size of each mapper input file shard in KB
- * @param appId application ID
+ * @param inputFiles comma-separated list of input files paths processed by mapper tasks
+ * @param outputDir existing output directory path for intermediate and final output
+ * @param numPartitions number of reducer partitions and the number of final output files generated
+ * @param shardSizeKb target size of each mapper input file shard in kilobytes
+ * @param appId application ID resolved through the worker task registry
  */
 public record MapReduceSpec(
         int numWorkers,

@@ -6,20 +6,27 @@ import com.frg96.mapreduce.master.Master;
 import java.util.List;
 
 /**
- * Main class for configuring and running a MapReduce job.
+ * Synchronous entry point for executing a MapReduce job.
+ *
+ * <p>A job is parsed and validated, its intermediate directory is prepared,
+ * input files are divided into shards, and an in-process master coordinates
+ * the configured workers through gRPC.</p>
  */
 public final class MapReduceJob {
     /**
-     * Runs a MapReduce job.
-     * 1. Parses the config file
-     * 2. Validates the spec
-     * 3. Prepares the intermediate directory
-     * 4. Shards the input files
-     * 5. Starts the master
-     * 6. Waits for the master to finish
+     * Executes the job described by a configuration file.
      *
-     * @param configFilePath path to the config.properties file
-     * @return true if the job was successful, false otherwise
+     * <p><ol>
+     * <li>Parses the config file</li>
+     * <li>Validates the spec</li>
+     * <li>Prepares the intermediate directory</li>
+     * <li>Shards the input files</li>
+     * <li>Starts the master</li>
+     * <li>Waits for the master to finish</li>
+     * </ol></p>
+     *
+     * @param configFilePath path to the job config properties file
+     * @return {@code true} when the job completes successfully; otherwise {@code false}
      */
     public boolean run(String configFilePath) {
         // Parse the config file and validate the spec

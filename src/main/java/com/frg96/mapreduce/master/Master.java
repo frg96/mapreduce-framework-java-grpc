@@ -17,6 +17,20 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 
+/**
+ * Coordinates the execution of a single MapReduce job.
+ *
+ * <p>The master assigns input shards to workers during the map phase,
+ * collects the generated intermediate files, and assigns output partitions
+ * during the reduce phase. Workers are contacted through blocking gRPC
+ * clients.</p>
+ *
+ * <p>Failed tasks are returned to their ready queue for reassignment.
+ * Workers that become unavailable or exceed their deadline are excluded
+ * from subsequent work. The job is aborted when no usable workers remain.</p>
+ *
+ * <p>A {@code Master} instance represents one job and should not be reused.</p>
+ */
 public class Master {
     private static final Logger logger = Logger.getLogger(Master.class.getName());
 
@@ -25,11 +39,18 @@ public class Master {
     private final List<ShardInfo> shardInfos = new ArrayList<>();
     private final List<PartitionInfo> partitionInfos = new ArrayList<>();
 
+    // Task Queues to hold the IDs of ShardInfo or PartitionInfo
     private final BlockingQueue<Integer> readyShards = new LinkedBlockingQueue<>();
     private final BlockingQueue<Integer> readyPartitions = new LinkedBlockingQueue<>();
 
-    private static final int POISON_PILL = -1;
+    private static final int POISON_PILL = -1; // to signal mapper and reducer threads to stop
 
+    /**
+     * Creates a master for a MapReduce job.
+     *
+     * @param spec validated job configuration
+     * @param fileShards input shards to process during the map phase
+     */
     public Master(MapReduceSpec spec, List<FileShard> fileShards) {
         this.spec = spec;
 
@@ -46,6 +67,12 @@ public class Master {
         }
     }
 
+    /**
+     * Executes the map and reduce phases and releases worker clients when done.
+     *
+     * @return {@code true} if both phases complete successfully;
+     *         {@code false} if preparation or task execution fails
+     */
     public boolean run() {
         try{
             if(!prepareFinalOutputDirectory(spec.outputDir()))
@@ -97,6 +124,12 @@ public class Master {
         }
     }
 
+    /**
+     * Executes the map phase by assigning ready input shards to workers.
+     *
+     * @return {@code true} if every shard completes successfully;
+     *         {@code false} if the phase is aborted
+     */
     private boolean runMapPhase() {
         CountDownLatch latch = new CountDownLatch(shardInfos.size());
         AtomicBoolean aborted = new AtomicBoolean(false);
@@ -120,6 +153,15 @@ public class Master {
         return !aborted.get();
     }
 
+    /**
+     * Repeatedly takes ready shards from the work queue and executes them
+     * on the given worker. Failed shards are returned to the queue so another
+     * usable worker can retry them.
+     *
+     * @param workerInfo worker assigned to consume map tasks
+     * @param latch tracks the number of incomplete shards
+     * @param aborted shared flag indicating that the phase must stop
+     */
     private void mapperTask(WorkerInfo workerInfo, CountDownLatch latch, AtomicBoolean aborted) {
         while(!Thread.currentThread().isInterrupted() && !aborted.get()) {
             int shardId;
@@ -174,6 +216,15 @@ public class Master {
         }
     }
 
+    /**
+     * Creates the mapper RPC request for an input shard.
+     *
+     * <p>The request includes the application ID, output partition count,
+     * output directory, and byte ranges assigned to the shard.</p>
+     *
+     * @param fileShard input files and byte ranges assigned to the task
+     * @return mapper request to send to a worker
+     */
     private MapperInput buildMapperInput(FileShard fileShard) {
         MapperInput.Builder builder = MapperInput.newBuilder()
                 .setAppId(spec.appId())
@@ -196,6 +247,13 @@ public class Master {
         return builder.build();
     }
 
+    /**
+     * Executes the reduce phase using workers that successfully completed
+     * the map phase and remain available.
+     *
+     * @return {@code true} if every partition completes successfully;
+     *         {@code false} if no active workers remain or the phase is aborted
+     */
     private boolean runReducePhase() {
         List<WorkerInfo> activeWorkers = workerInfos.stream()
                 .filter(workerInfo -> workerInfo.getWorkerStatus() != WorkerStatus.DEAD)
@@ -229,6 +287,15 @@ public class Master {
         return !aborted.get();
     }
 
+    /**
+     * Repeatedly takes ready partitions from the work queue and executes them
+     * on the given worker. Failed partitions are returned to the queue so
+     * another usable worker can retry them.
+     *
+     * @param workerInfo worker assigned to consume reduce tasks
+     * @param latch tracks the number of incomplete partitions
+     * @param aborted shared flag indicating that the phase must stop
+     */
     private void reducerTask(WorkerInfo workerInfo, CountDownLatch latch, AtomicBoolean aborted) {
         while(!Thread.currentThread().isInterrupted() && !aborted.get()) {
             int partitionId;
@@ -281,6 +348,15 @@ public class Master {
         }
     }
 
+    /**
+     * Creates the reducer RPC request for an output partition.
+     *
+     * <p>The request contains the application ID, partition ID, output
+     * directory, and intermediate files produced for the partition.</p>
+     *
+     * @param partitionInfo partition and its intermediate input files
+     * @return reducer request to send to a worker
+     */
     private ReducerInput buildReducerInput(PartitionInfo partitionInfo) {
         ReducerInput.Builder builder = ReducerInput.newBuilder()
                 .setAppId(spec.appId())
@@ -298,6 +374,12 @@ public class Master {
         return builder.build();
     }
 
+    /**
+     * Copies a reducer result into the job's final output directory.
+     *
+     * @param reducerOutputFilePath path to the reducer's intermediate result
+     * @throws IllegalStateException if the result cannot be copied
+     */
     private void copyReducerOutput(String reducerOutputFilePath) {
         try {
             Path source = Path.of(reducerOutputFilePath);
@@ -314,6 +396,17 @@ public class Master {
 
     }
 
+    /**
+     * Updates a worker's status based on a failed gRPC request.
+     *
+     * <p>Deadline failures mark the worker as slow, unavailable failures
+     * mark it as dead, and other failures return it to the idle state.</p>
+     *
+     * @param worker worker whose request failed
+     * @param e gRPC failure returned by the worker
+     * @return {@code true} if the worker should stop consuming tasks;
+     *         {@code false} if it remains usable
+     */
     private boolean handleWorkerFailure(WorkerInfo worker, StatusRuntimeException e) {
         Status.Code code = e.getStatus().getCode();
 
@@ -331,6 +424,15 @@ public class Master {
         return false;
     }
 
+    /**
+     * Aborts the current phase when no usable workers remain.
+     *
+     * <p>The latch is released so the coordinating thread does not wait
+     * indefinitely for tasks that can no longer be executed.</p>
+     *
+     * @param latch tracks tasks that have not completed
+     * @param aborted shared flag indicating whether the phase was aborted
+     */
     private void abortIfNoUsableWorkers(CountDownLatch latch, AtomicBoolean aborted) {
         if (noUsableWorkers() && aborted.compareAndSet(false, true)) {
             logger.severe("No usable workers remain; aborting job");
@@ -341,11 +443,23 @@ public class Master {
         }
     }
 
+    /**
+     * Determines whether every configured worker has been marked dead or slow.
+     *
+     * @return {@code true} if no worker can accept additional tasks
+     */
     private boolean noUsableWorkers() {
         return workerInfos.stream()
                 .noneMatch(workerInfo -> (workerInfo.getWorkerStatus() != WorkerStatus.DEAD) && (workerInfo.getWorkerStatus() != WorkerStatus.SLOW));
     }
 
+    /**
+     * Waits until every task tracked by the latch has completed or the phase
+     * has been aborted.
+     *
+     * @param latch task-completion latch
+     * @throws IllegalStateException if the waiting thread is interrupted
+     */
     private static void await(CountDownLatch latch) {
         try {
             latch.await();

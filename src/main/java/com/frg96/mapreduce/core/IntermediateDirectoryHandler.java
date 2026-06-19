@@ -6,15 +6,19 @@ import java.nio.file.Path;
 import java.util.Comparator;
 
 /**
- * Utility class for handling the intermediate directory.
+ * Manages mapper and reducer intermediate-output directories.
  */
 public class IntermediateDirectoryHandler {
     private IntermediateDirectoryHandler() {}
 
     /**
-     * Prepares the intermediate directory by deleting all files in it and creating the mapper and reducer directories.
-     * @param outputDir the output directory path
-     * @return true if the intermediate directory was prepared successfully, false otherwise
+     * Recreates {@code outputDir/intermediate} for a new job.
+     *
+     * <p>Existing intermediate contents are deleted before empty
+     * {@code mapper} and {@code reducer} directories are created.</p>
+     *
+     * @param outputDir existing job output directory
+     * @return {@code true} when preparation succeeds; otherwise {@code false}
      */
     public static boolean prepareIntermediateDirectory(String outputDir) {
         Path intermediateDir = Path.of(outputDir, "intermediate");

@@ -4,7 +4,12 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Task registry. Used to register mappers and reducers.
+ * JVM-local, thread-safe registry of MapReduce applications.
+ *
+ * <p>Each application ID maps to one {@link TaskFactory}. Because static
+ * state is not shared between JVMs, every standalone worker must initialize
+ * its own registry before accepting requests.</p>
+ *
  * @see TaskFactory
  */
 public class TaskRegistry {
@@ -13,19 +18,23 @@ public class TaskRegistry {
     private TaskRegistry() {}
 
     /**
-     * Registers a new TaskFactory for the given app_id.
-     * @param appId the app_id
-     * @param factory the TaskFactory object
-     * @return true if the factory was registered successfully, false otherwise
+     * Registers a factory unless the application ID already exists.
+     *
+     * @param appId unique application ID used by job configurations
+     * @param factory factory associated with the application
+     * @return {@code true} when registered; {@code false} when already present
+     * @throws NullPointerException if either argument is {@code null}
      */
     public static boolean register(String appId, TaskFactory factory) {
         return factories.putIfAbsent(appId, factory) == null;
     }
 
     /**
-     * Creates a new mapper for the given app_id using the registered TaskFactory.
-     * @param appId the app_id
-     * @return a new Mapper object
+     * Creates a mapper for a registered application.
+     *
+     * @param appId registered application ID
+     * @return a new mapper instance
+     * @throws IllegalArgumentException if the application is not registered
      */
     public static Mapper createMapper(String appId) {
         TaskFactory factory = factories.get(appId);
@@ -38,9 +47,11 @@ public class TaskRegistry {
     }
 
     /**
-     * Creates a new reducer for the given app_id using the registered TaskFactory.
-     * @param appId the application ID string
-     * @return a new Reducer object
+     * Creates a reducer for a registered application.
+     *
+     * @param appId registered application ID
+     * @return a new reducer instance
+     * @throws IllegalArgumentException if the application is not registered
      */
     public static Reducer createReducer(String appId) {
         TaskFactory factory = factories.get(appId);

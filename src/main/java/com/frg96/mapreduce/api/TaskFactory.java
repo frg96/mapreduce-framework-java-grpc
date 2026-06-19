@@ -1,18 +1,24 @@
 package com.frg96.mapreduce.api;
 
 /**
- * Factory interface for creating mappers and reducers.
+ * Creates mapper and reducer instances for a registered application.
+ *
+ * <p>Factories are registered under an application ID in
+ * {@link TaskRegistry}. Each call should return a new task instance so state
+ * is not shared between independent RPCs.</p>
  */
 public interface TaskFactory {
     /**
-     * Creates a new mapper.
-     * @return object implementing {@link Mapper}
+     * Creates a mapper for one mapper task.
+     *
+     * @return a new {@link Mapper} instance
      */
     Mapper createMapper();
 
     /**
-     * Creates a new reducer.
-     * @return object implementing {@link Reducer}
+     * Creates a reducer for one reducer task.
+     *
+     * @return a new {@link Reducer} instance
      */
     Reducer createReducer();
 }

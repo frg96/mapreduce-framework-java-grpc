@@ -4,15 +4,20 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 /**
- * Utility class for validating the spec.
+ * Validates whether a parsed {@link MapReduceSpec} can be executed.
+ *
+ * <p>Validation checks worker counts and addresses, input files, the output
+ * directory, partition and shard sizes, and the application ID. Failures
+ * are reported to standard error.</p>
  */
 public class SpecValidator {
     private SpecValidator() {}
 
     /**
-     * Validates the MapReduceSpec object.
-     * @param spec the MapReduceSpec object to validate
-     * @return true if the spec is valid, false otherwise
+     * Validates a job specification.
+     *
+     * @param spec parsed job specification
+     * @return {@code true} when every validation rule passes, {@code false} otherwise
      */
     public static boolean validate(MapReduceSpec spec) {
         if(spec.numWorkers() <= 0) {

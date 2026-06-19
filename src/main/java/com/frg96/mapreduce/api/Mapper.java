@@ -1,14 +1,20 @@
 package com.frg96.mapreduce.api;
 
 /**
- * Mapper interface that must be implemented by the user.
+ * User-defined transformation applied to each input line of a map task.
+ *
+ * <p>Implementations emit zero or more intermediate records through the
+ * supplied {@link MapperContext}. A new mapper is created for each mapper
+ * RPC, so implementations may keep task-local state.</p>
  */
 public interface Mapper {
     /**
-     * Maps an input line to a key-value pair.
-     * Use {@link MapperContext#emit(String, String)} to emit a key-value pair.
-     * @param inputLine the input line to map
-     * @param context the mapper context
+     * Processes and maps one input line to a key-value pair.
+     *
+     * <p>Use {@link MapperContext#emit(String, String)} to emit a key-value pair.</p>
+     *
+     * @param inputLine input record without its line terminator
+     * @param context the mapper context used to emit intermediate records
      */
     void map(String inputLine, MapperContext context);
 }

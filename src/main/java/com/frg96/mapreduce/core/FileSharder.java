@@ -6,15 +6,22 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Utility class for sharding input files.
+ * Divides configured input files into line-aligned mapper shards.
+ *
+ * <p>Shards target the configured byte size but may extend past it to avoid
+ * splitting a line. A shard may contain ranges from multiple input files.</p>
  */
 public class FileSharder {
     private FileSharder() {}
 
     /**
-     * Shards the input files into FileShards based on the shard size specified in the spec.
-     * @param spec the MapReduceSpec object
-     * @return a list of FileShard objects
+     * Creates mapper shards for the input files in a validated job specification.
+     *
+     * <p>Shards the input files into FileShards based on the shard size specified in the spec.</p>
+     *
+     * @param spec job specification containing input files and target shard size
+     * @return list of {@link FileShard} objects in input-file and byte-offset order
+     * @throws IllegalArgumentException if an input file cannot be read
      */
     public static List<FileShard> shardFiles(MapReduceSpec spec) {
         List<FileShard> fileShards = new ArrayList<>();
