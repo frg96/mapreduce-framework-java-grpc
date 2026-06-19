@@ -82,7 +82,7 @@ public class WordCountIntegrationTest {
 
     @Test
     @DisplayName("Word Count Intg Test for multiple medium-sized Input Files")
-    void wordCountMediumInput(@TempDir Path tempDir) throws Exception {
+    void wordCountMediumMultipleInput(@TempDir Path tempDir) throws Exception {
         TestFixture fixture = TestUtils.createTestFixture(
                 tempDir,
                 Path.of("src/test/resources/input_files/wordcount/input_medium_multiple"),
