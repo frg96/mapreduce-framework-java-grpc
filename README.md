@@ -1,5 +1,7 @@
 # MapReduce Framework using Java and gRPC
 
+[![Java CI with Gradle](https://github.com/frg96/mapreduce-framework-java-grpc/actions/workflows/gradle_ci.yml/badge.svg?branch=main)](https://github.com/frg96/mapreduce-framework-java-grpc/actions/workflows/gradle_ci.yml)
+
 A Java MapReduce framework that distributes map and reduce tasks across standalone gRPC worker processes.
 
 The client reads a job configuration, partitions input files into shards, coordinates workers through an in-process master, and writes reducer results to partitioned output files.
